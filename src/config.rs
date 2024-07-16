@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use hide::Hide;
 use serde::Deserialize;
 
+pub(crate) const APP: &str = "bitcli";
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error(transparent)]
@@ -32,6 +34,11 @@ pub struct Config {
     ///  2. Value given as a program argument or an environment variable
     ///  3. Fetch current default group GUID for the logged in user
     pub default_group_guid: Option<String>,
+
+    /// Path to the cache directory
+    ///
+    /// If set to an empty path, then caching will be disabled.
+    pub cache_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -59,7 +66,11 @@ impl Config {
 
     /// Update current configs with _some_ of the given options (only those that are `Some`)
     pub fn override_with(&mut self, ops: impl Into<Options>) {
-        let Options { domain, group_guid } = ops.into();
+        let Options {
+            domain,
+            group_guid,
+            cache_dir,
+        } = ops.into();
 
         if domain.is_some() {
             self.domain = domain;
@@ -67,6 +78,10 @@ impl Config {
 
         if group_guid.is_some() {
             self.default_group_guid = group_guid;
+        }
+
+        if cache_dir.is_some() {
+            self.cache_dir = cache_dir;
         }
     }
 
@@ -83,6 +98,9 @@ pub struct Options {
 
     /// Default group GUID used in shorten requests (optional)
     pub group_guid: Option<String>,
+
+    /// Alternative path to the cache directory
+    pub cache_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]

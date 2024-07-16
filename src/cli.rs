@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Parser, Subcommand};
 use url::Url;
 
-use crate::config::ConfigError;
-
-const APP: &str = "bitcli";
+use crate::config::{ConfigError, APP};
 
 #[derive(Debug, Parser)]
 #[command(name = APP)]
@@ -20,7 +18,18 @@ pub struct Cli {
     #[arg(short, long, env = "BITCLI_CONFIG_FILE")]
     config_file: Option<PathBuf>,
 
-    // TODO: cache_dir: Option<PathBuf>,
+    /// Alternative path to the cache directory
+    ///
+    /// If set to an empty path, then caching will be disabled.
+    #[arg(long, env = "BITCLI_CACHE_DIR")]
+    cache_dir: Option<PathBuf>,
+
+    // TODO: --no-cache | -nc => explicitly disable caching
+    //  - global vs ShortenArgs flag
+    //  - possibly implement by adding a `cache_dir()` getter that combines all the cache* fields
+    //  - conflicts with vs overrides `cache_dir` option
+    //#[arg(short, long, default_value = "false", env = "BITCLI_NO_CACHE")]
+    //no_cache: bool,
 
     // emulate default (sub)command
     #[clap(flatten)]
