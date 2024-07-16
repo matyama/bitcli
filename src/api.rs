@@ -95,9 +95,9 @@ pub struct Client {
 
 // TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
 impl Client {
-    pub fn new(cfg: Config) -> Self {
+    pub async fn new(cfg: Config) -> Self {
         let http = reqwest::Client::new();
-        let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref());
+        let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref()).await;
         Self { cfg, http, cache }
     }
 
@@ -143,7 +143,7 @@ impl Client {
 
         // fast path: check local cache for the bitlink
         if let Some(ref cache) = self.cache {
-            if let Some(bitlink) = cache.get(&payload) {
+            if let Some(bitlink) = cache.get(&payload).await {
                 return Ok(bitlink);
             }
         }
@@ -174,7 +174,7 @@ impl Client {
         // if successful then update local cache
         if let Ok(ref result) = result {
             if let Some(ref cache) = self.cache {
-                cache.set(payload, result);
+                cache.set(payload, result).await;
             }
         }
 

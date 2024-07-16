@@ -1,20 +1,19 @@
-use std::borrow::Cow;
 use std::path::Path;
+use std::str::FromStr as _;
 
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-use rusqlite::{named_params, Connection};
-use url::Url;
+use sqlx::prelude::*;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteRow};
+use sqlx::SqlitePool;
 
 use crate::api::{Bitlink, Shorten};
 use crate::config::APP;
 
 pub struct BitlinkCache {
-    conn: Connection,
+    pool: sqlx::SqlitePool,
 }
 
-// TODO: all the cache operations are essentially blocking, make them async (e.g., spawn_blocking)
 impl BitlinkCache {
-    pub fn new(name: &str, cache_dir: Option<impl AsRef<Path>>) -> Option<Self> {
+    pub async fn new(name: &str, cache_dir: Option<impl AsRef<Path>>) -> Option<Self> {
         let cache_dir = match cache_dir {
             Some(dir) if dir.as_ref().as_os_str().is_empty() => return None,
             // XXX: allow relative paths (requires MSRV bump)
@@ -38,19 +37,29 @@ impl BitlinkCache {
             return None;
         }
 
-        // TODO: add a log macro
-        //println!("using cache {:?}", cache_dir.join(format!("{name}.db")));
+        let path = cache_dir.join(format!("{name}.db"));
+        let path = path.to_string_lossy();
 
-        let conn = match Connection::open(cache_dir.join(format!("{name}.db"))) {
-            Ok(conn) => conn,
+        // TODO: add a log macro
+        //println!("using cache {path:?}");
+
+        let Ok(ops) = SqliteConnectOptions::from_str(&format!("sqlite:{path}")) else {
+            eprintln!("{APP}(cache): invalid database path {path:?}");
+            return None;
+        };
+
+        let ops = ops.create_if_missing(true);
+
+        let pool = match SqlitePool::connect_with(ops).await {
+            Ok(pool) => pool,
             Err(err) => {
-                eprintln!("{APP}(cache-open): {err}");
+                eprintln!("{APP}(cache): {err}");
                 return None;
             }
         };
 
-        let res = conn.execute(
-            "
+        let res = sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS shorten (
               id TEXT NOT NULL UNIQUE,
               link TEXT NOT NULL,
@@ -61,9 +70,10 @@ impl BitlinkCache {
 
             CREATE UNIQUE INDEX IF NOT EXISTS ix_shorten
             ON shorten (group_guid, domain, long_url);
-            ",
-            (),
-        );
+            "#,
+        )
+        .execute(&pool)
+        .await;
 
         if let Err(err) = res {
             // TODO: add a log macro
@@ -71,68 +81,51 @@ impl BitlinkCache {
             return None;
         }
 
-        Some(Self { conn })
+        Some(Self { pool })
     }
 
-    pub fn get(&self, query: &Shorten<'_>) -> Option<Bitlink> {
-        let stmt = self.conn.prepare_cached(
-            "
+    pub async fn get(&self, query: &Shorten<'_>) -> Option<Bitlink> {
+        let res = sqlx::query_as(
+            r#"
             SELECT id, link
             FROM shorten
-            WHERE group_guid = :group_guid AND domain = :domain AND long_url = :long_url
-            ",
-        );
+            WHERE group_guid = $1 AND domain = $2 AND long_url = $3
+            LIMIT 1
+            "#,
+        )
+        .bind(query.group_guid.as_ref())
+        .bind(query.domain)
+        .bind(query.long_url.as_str())
+        .fetch_optional(&self.pool)
+        .await;
 
-        let mut stmt = match stmt {
-            Ok(stmt) => stmt,
+        match res {
+            Ok(link) => link,
             Err(err) => {
                 // TODO: add a log macro
                 eprintln!("{APP}(cache-get): {err}");
-                return None;
-            }
-        };
-
-        let params = named_params![
-            ":group_guid": query.group_guid,
-            ":domain": query.domain,
-            ":long_url": UrlSql::from(&query.long_url),
-        ];
-
-        let res = stmt.query_row(params, |row| {
-            Ok(Bitlink {
-                link: row.get::<_, UrlSql>(1)?.into(),
-                id: row.get(0)?,
-            })
-        });
-
-        match res {
-            Ok(link) => Some(link),
-            Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(error) => {
-                // TODO: add a log macro
-                eprintln!("{APP}(cache-get): {error}");
                 None
             }
         }
     }
 
-    pub fn set(&self, query: Shorten<'_>, link: &Bitlink) {
-        let res = self.conn.execute(
-            "
+    pub async fn set(&self, query: Shorten<'_>, link: &Bitlink) {
+        let res = sqlx::query(
+            r#"
             INSERT INTO shorten (id, link, long_url, domain, group_guid) VALUES
-            (:id, :link, :long_url, :domain, :group_guid)
-            ",
-            named_params![
-                ":id": link.id,
-                ":link": UrlSql::from(&link.link),
-                ":long_url": UrlSql::from(&query.long_url),
-                ":domain": query.domain,
-                ":group_guid": query.group_guid,
-            ],
-        );
+            ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(&link.id)
+        .bind(link.link.as_str())
+        .bind(query.long_url.as_str())
+        .bind(query.domain)
+        .bind(query.group_guid.as_ref())
+        .execute(&self.pool)
+        .await;
 
         match res {
-            Ok(inserted) => debug_assert_eq!(inserted, 1),
+            Ok(res) => debug_assert_eq!(res.rows_affected(), 1),
             Err(error) => {
                 // TODO: add a log macro
                 eprintln!("{APP}(cache-set): {error}");
@@ -141,37 +134,37 @@ impl BitlinkCache {
     }
 }
 
-#[repr(transparent)]
-struct UrlSql<'a>(Cow<'a, Url>);
-
-impl<'a> From<&'a Url> for UrlSql<'a> {
-    #[inline]
-    fn from(url: &'a Url) -> Self {
-        Self(Cow::Borrowed(url))
-    }
-}
-
-impl From<UrlSql<'_>> for Url {
-    #[inline]
-    fn from(UrlSql(url): UrlSql) -> Self {
-        url.into_owned()
-    }
-}
-
-impl FromSql for UrlSql<'_> {
-    fn column_result(value: ValueRef) -> FromSqlResult<Self> {
-        value.as_str().and_then(|url| {
-            Url::try_from(url)
-                .map(Cow::Owned)
-                .map(Self)
-                .map_err(|err| FromSqlError::Other(Box::new(err)))
+impl FromRow<'_, SqliteRow> for Bitlink {
+    fn from_row(row: &SqliteRow) -> sqlx::Result<Self> {
+        Ok(Self {
+            link: row.try_from::<&str, _, _>("link")?,
+            id: row.try_get("id")?,
         })
     }
 }
 
-impl ToSql for UrlSql<'_> {
-    #[inline]
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput> {
-        Ok(self.0.as_str().into())
+trait RowExt: Row {
+    fn try_from<'r, T, I, R>(&'r self, index: I) -> sqlx::Result<R>
+    where
+        T: Decode<'r, Self::Database> + Type<Self::Database>,
+        I: sqlx::ColumnIndex<Self> + std::fmt::Display,
+        R: TryFrom<T>,
+        <R as TryFrom<T>>::Error: std::error::Error + Send + Sync + 'static;
+}
+
+impl RowExt for SqliteRow {
+    fn try_from<'r, T, I, R>(&'r self, index: I) -> sqlx::Result<R>
+    where
+        T: Decode<'r, Self::Database> + Type<Self::Database>,
+        I: sqlx::ColumnIndex<Self> + std::fmt::Display,
+        R: TryFrom<T>,
+        <R as TryFrom<T>>::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.try_get(&index).and_then(|val| {
+            R::try_from(val).map_err(|source| sqlx::Error::ColumnDecode {
+                index: index.to_string(),
+                source: Box::new(source),
+            })
+        })
     }
 }
