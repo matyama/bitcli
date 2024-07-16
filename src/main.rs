@@ -31,7 +31,7 @@ async fn main() {
     let cmd = args.into();
     cfg.override_with(&cmd);
 
-    let client = Client::new(cfg);
+    let client = Client::new(cfg).await;
 
     match cmd {
         Command::Shorten(args) => {
