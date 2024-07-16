@@ -1,6 +1,7 @@
 use clap::Parser as _;
 
 mod api;
+mod cache;
 mod cli;
 mod config;
 mod error;

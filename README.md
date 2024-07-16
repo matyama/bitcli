@@ -33,6 +33,9 @@ import for sensitive information (auth info):
 ```toml
 import = ["auth.toml"]
 
+# Cache directory (optional, empty path disables caching)
+# cache_dir = "/path/to/cache/bitcli"
+
 # Default domain (optional)
 domain = "bit.ly"
 ```

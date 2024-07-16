@@ -1,11 +1,27 @@
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::cache::BitlinkCache;
 use crate::config::Config;
 use crate::error::{Error, Result};
+
+const VERSION: &str = "v4";
+
+fn api_url(endpoint: &str) -> Url {
+    static API_URL: OnceLock<Url> = OnceLock::new();
+    API_URL
+        .get_or_init(|| {
+            format!("https://api-ssl.bitly.com/{VERSION}/")
+                .parse()
+                .expect("invalid API URL")
+        })
+        .join(endpoint)
+        .expect("invalid endpoint URL")
+}
 
 /// API request to get user info
 ///
@@ -20,11 +36,11 @@ pub struct User {
 ///
 /// <https://dev.bitly.com/api-reference/#createBitlink>
 #[derive(Serialize)]
-struct Shorten<'a> {
-    long_url: Url,
+pub(crate) struct Shorten<'a> {
+    pub(crate) long_url: Url,
     #[serde(skip_serializing_if = "Option::is_none")]
-    domain: Option<&'a str>,
-    group_guid: Cow<'a, str>,
+    pub(crate) domain: Option<&'a str>,
+    pub(crate) group_guid: Cow<'a, str>,
 }
 
 impl std::fmt::Debug for Shorten<'_> {
@@ -53,7 +69,7 @@ impl std::fmt::Display for Bitlink {
 }
 
 macro_rules! parse_response {
-    ($resp:expr => $ok:ident $(| $oks:ident)* || $err:ident $(| $errs:ident)*) => {
+    ($resp:expr => $ok:ident $(| $oks:ident)* || $err:ident $(| $errs:ident)*) => {{
         let resp = $resp;
         match resp.status() {
             StatusCode::$ok $(| StatusCode::$oks)* => match resp.json().await {
@@ -67,30 +83,31 @@ macro_rules! parse_response {
             },
 
             code => unreachable!("API violation: unexpected status code '{code}'"),
-        }
+        }}
     };
 }
 
 pub struct Client {
     cfg: Config,
     http: reqwest::Client,
+    cache: Option<BitlinkCache>,
 }
 
 // TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
 impl Client {
-    #[inline]
     pub fn new(cfg: Config) -> Self {
-        Self {
-            cfg,
-            http: reqwest::Client::new(),
-        }
+        let http = reqwest::Client::new();
+        let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref());
+        Self { cfg, http, cache }
     }
 
     pub async fn fetch_user(&self) -> Result<User> {
+        let endpoint = api_url("user");
+
         //println!("fetching user info");
         let resp = self
             .http
-            .get("https://api-ssl.bitly.com/v4/user")
+            .get(endpoint)
             .bearer_auth(self.cfg.api_token())
             .send()
             .await?;
@@ -117,25 +134,32 @@ impl Client {
 
         // TODO: cache links in a local sqlite DB
         //  - use e.g. `$XDG_CACHE_HOME/bitly/links`
-        //  - add `--offline` mode
+        //  - add `--offline` mode (possibly conflicts with `--no-cache`)
         let payload = Shorten {
             long_url,
             domain: self.cfg.domain.as_deref(),
             group_guid,
         };
 
-        // TODO: check local cache for the payload
+        // fast path: check local cache for the bitlink
+        if let Some(ref cache) = self.cache {
+            if let Some(bitlink) = cache.get(&payload) {
+                return Ok(bitlink);
+            }
+        }
+
+        let endpoint = api_url("shorten");
 
         //println!("sending shorten request: {payload:#?}");
         let resp = self
             .http
-            .post("https://api-ssl.bitly.com/v4/shorten")
+            .post(endpoint)
             .bearer_auth(self.cfg.api_token())
             .json(&payload)
             .send()
             .await?;
 
-        parse_response! { resp =>
+        let result = parse_response! { resp =>
             OK | CREATED
             ||
             BAD_REQUEST
@@ -145,6 +169,15 @@ impl Client {
             | TOO_MANY_REQUESTS
             | INTERNAL_SERVER_ERROR
             | SERVICE_UNAVAILABLE
+        };
+
+        // if successful then update local cache
+        if let Ok(ref result) = result {
+            if let Some(ref cache) = self.cache {
+                cache.set(payload, result);
+            }
         }
+
+        result
     }
 }
