@@ -24,11 +24,12 @@ macro_rules! crash_if_err {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let args = Cli::parse();
+    let cli = Cli::parse();
 
-    let mut cfg = crash_if_err! { args.config_file().and_then(Config::load) };
+    let mut cfg = crash_if_err! { cli.config_file().and_then(Config::load) };
+    cfg.override_with(&cli);
 
-    let cmd = args.into();
+    let cmd = cli.into();
     cfg.override_with(&cmd);
 
     let client = Client::new(cfg).await;
