@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::{Args, Parser, Subcommand, ValueHint};
 use url::Url;
 
-use crate::config::{ConfigError, APP};
+use crate::config::{ConfigError, Options, APP};
 
 #[derive(Debug, Parser)]
 #[command(name = APP)]
@@ -53,6 +53,14 @@ impl Cli {
     }
 }
 
+impl From<&Cli> for Options {
+    fn from(cli: &Cli) -> Self {
+        let mut ops = Self::default();
+        ops.cache_dir.clone_from(&cli.cache_dir);
+        ops
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     #[command(about = "Shorten URL and print the result to the output (default)")]
@@ -66,7 +74,7 @@ impl From<Cli> for Command {
     }
 }
 
-impl From<&Command> for crate::config::Options {
+impl From<&Command> for Options {
     fn from(cmd: &Command) -> Self {
         let mut ops = Self::default();
 
