@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueHint};
 use url::Url;
 
 use crate::config::{ConfigError, APP};
@@ -15,13 +15,13 @@ pub struct Cli {
     command: Option<Command>,
 
     /// Alternative path to the config file (TOML)
-    #[arg(short, long, env = "BITCLI_CONFIG_FILE")]
+    #[arg(short, long, env = "BITCLI_CONFIG_FILE", value_hint = ValueHint::FilePath)]
     config_file: Option<PathBuf>,
 
     /// Alternative path to the cache directory
     ///
     /// If set to an empty path, then caching will be disabled.
-    #[arg(long, env = "BITCLI_CACHE_DIR")]
+    #[arg(long, env = "BITCLI_CACHE_DIR", value_hint = ValueHint::DirPath)]
     cache_dir: Option<PathBuf>,
 
     // TODO: --no-cache | -nc => explicitly disable caching
