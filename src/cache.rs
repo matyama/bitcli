@@ -2,14 +2,14 @@ use std::path::Path;
 use std::str::FromStr as _;
 
 use sqlx::prelude::*;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteRow};
-use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqliteRow};
 
 use crate::api::{Bitlink, Shorten};
 use crate::config::APP;
 
+#[derive(Debug)]
 pub struct BitlinkCache {
-    pool: sqlx::SqlitePool,
+    pool: SqlitePool,
 }
 
 impl BitlinkCache {
@@ -94,7 +94,7 @@ impl BitlinkCache {
             "#,
         )
         .bind(query.group_guid.as_ref())
-        .bind(query.domain)
+        .bind(query.domain.as_ref())
         .bind(query.long_url.as_str())
         .fetch_optional(&self.pool)
         .await;
@@ -109,7 +109,7 @@ impl BitlinkCache {
         }
     }
 
-    pub async fn set(&self, query: Shorten<'_>, link: &Bitlink) {
+    pub async fn set(&self, query: &Shorten<'_>, link: &Bitlink) -> bool {
         let res = sqlx::query(
             r#"
             INSERT INTO shorten (id, link, long_url, domain, group_guid) VALUES
@@ -119,16 +119,17 @@ impl BitlinkCache {
         .bind(&link.id)
         .bind(link.link.as_str())
         .bind(query.long_url.as_str())
-        .bind(query.domain)
+        .bind(query.domain.as_ref())
         .bind(query.group_guid.as_ref())
         .execute(&self.pool)
         .await;
 
         match res {
-            Ok(res) => debug_assert_eq!(res.rows_affected(), 1),
+            Ok(res) => res.rows_affected() == 1,
             Err(error) => {
                 // TODO: add a log macro
                 eprintln!("{APP}(cache-set): {error}");
+                false
             }
         }
     }
@@ -166,5 +167,93 @@ impl RowExt for SqliteRow {
                 source: Box::new(source),
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+    use std::path::PathBuf;
+
+    use super::*;
+    use rstest::*;
+
+    use tempfile::TempDir;
+
+    #[fixture]
+    fn shorten<'a>() -> Shorten<'a> {
+        Shorten {
+            long_url: "https://example.com".parse().unwrap(),
+            domain: Some(Cow::Borrowed("bit.ly")),
+            group_guid: Cow::Borrowed("test-group-guid"),
+        }
+    }
+
+    #[fixture]
+    fn link() -> Bitlink {
+        Bitlink {
+            link: "https://bit.ly/4ePsyXN".parse().unwrap(),
+            id: "some-bitlink-id".to_string(),
+        }
+    }
+
+    #[fixture]
+    fn cache_dir() -> TempDir {
+        tempfile::tempdir().expect("failed to create temp cache dir")
+    }
+
+    #[fixture]
+    async fn cache(cache_dir: TempDir, #[default("test")] name: &str) -> BitlinkCache {
+        let path = cache_dir.path().to_path_buf();
+
+        let Some(cache) = BitlinkCache::new(name, Some(cache_dir)).await else {
+            panic!("failed to create new '{name}' cache in {path:?}");
+        };
+
+        cache
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn set_is_idempotent(
+        #[future(awt)] cache: BitlinkCache,
+        shorten: Shorten<'_>,
+        link: Bitlink,
+    ) {
+        let set = cache.set(&shorten, &link).await;
+        assert!(set, "cache set should succeed on unique entry");
+
+        let set = cache.set(&shorten, &link).await;
+        assert!(!set, "cache set should ignore an existing entry");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_non_existent_yield_nothing(
+        #[future(awt)] cache: BitlinkCache,
+        shorten: Shorten<'_>,
+    ) {
+        let link = cache.get(&shorten).await;
+        assert!(link.is_none(), "expected empty cache, got {link:?}");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn set_get_is_id_link(
+        #[future(awt)] cache: BitlinkCache,
+        shorten: Shorten<'static>,
+        link: Bitlink,
+    ) {
+        cache.set(&shorten, &link).await;
+        let cached = cache.get(&shorten).await;
+
+        assert_eq!(Some(link), cached);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn disable_cache() {
+        let cache = BitlinkCache::new("test-disable-cache", Some(PathBuf::new())).await;
+        assert!(cache.is_none(), "empty cache dir should disable the cache");
     }
 }

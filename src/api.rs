@@ -36,11 +36,11 @@ pub struct User {
 ///
 /// <https://dev.bitly.com/api-reference/#createBitlink>
 #[derive(Serialize)]
-pub(crate) struct Shorten<'a> {
-    pub(crate) long_url: Url,
+pub struct Shorten<'a> {
+    pub long_url: Url,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) domain: Option<&'a str>,
-    pub(crate) group_guid: Cow<'a, str>,
+    pub domain: Option<Cow<'a, str>>,
+    pub group_guid: Cow<'a, str>,
 }
 
 impl std::fmt::Debug for Shorten<'_> {
@@ -54,7 +54,7 @@ impl std::fmt::Debug for Shorten<'_> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Bitlink {
     pub link: Url,
     #[allow(dead_code)]
@@ -132,12 +132,14 @@ impl Client {
             },
         };
 
+        let domain = self.cfg.domain.as_deref().map(Cow::Borrowed);
+
         // TODO: cache links in a local sqlite DB
         //  - use e.g. `$XDG_CACHE_HOME/bitly/links`
         //  - add `--offline` mode (possibly conflicts with `--no-cache`)
         let payload = Shorten {
             long_url,
-            domain: self.cfg.domain.as_deref(),
+            domain,
             group_guid,
         };
 
@@ -174,7 +176,7 @@ impl Client {
         // if successful then update local cache
         if let Ok(ref result) = result {
             if let Some(ref cache) = self.cache {
-                cache.set(payload, result).await;
+                cache.set(&payload, result).await;
             }
         }
 
