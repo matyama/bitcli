@@ -1,10 +1,15 @@
 use serde::Deserialize;
 
+use crate::config::APP;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Cannot determine group GOUID: {0}")]
+    #[error("{APP}: operation '{0}' could not complete under offline mode")]
+    Offline(&'static str),
+
+    #[error("{APP}: cannot determine group GOUID: {0}")]
     UnknownGroupGUID(&'static str),
 
     #[error(transparent)]
@@ -16,7 +21,7 @@ pub enum Error {
 
 #[derive(Debug, Deserialize, thiserror::Error)]
 #[error(
-    "Bitly request failed with {message} ({}): {} | {:?}",
+    "{APP}: Bitly request failed with {message} ({}): {} | {:?}",
     resource.as_deref().unwrap_or("?"),
     description.as_deref().unwrap_or("?"),
     errors.as_deref().unwrap_or_default(),

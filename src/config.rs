@@ -39,6 +39,12 @@ pub struct Config {
     ///
     /// If set to an empty path, then caching will be disabled.
     pub cache_dir: Option<PathBuf>,
+
+    /// If set to `true` then no API requests will be issued (disabled by default)
+    ///
+    /// Any command will only rely on the local cache under the _offline_ mode.
+    #[serde(default = "default::offline")]
+    pub offline: bool,
 }
 
 impl Config {
@@ -66,28 +72,35 @@ impl Config {
 
     /// Update current configs with _some_ of the given options (only those that are `Some`)
     pub fn override_with(&mut self, ops: impl Into<Options>) {
-        let Options {
-            domain,
-            group_guid,
-            cache_dir,
-        } = ops.into();
+        let ops = ops.into();
 
-        if domain.is_some() {
-            self.domain = domain;
+        if ops.domain.is_some() {
+            self.domain = ops.domain;
         }
 
-        if group_guid.is_some() {
-            self.default_group_guid = group_guid;
+        if ops.group_guid.is_some() {
+            self.default_group_guid = ops.group_guid;
         }
 
-        if cache_dir.is_some() {
-            self.cache_dir = cache_dir;
+        if ops.cache_dir.is_some() {
+            self.cache_dir = ops.cache_dir;
+        }
+
+        if let Some(offline) = ops.offline {
+            self.offline = offline;
         }
     }
 
     #[inline]
     pub(crate) fn api_token(&self) -> &str {
         self.api_token.as_ref()
+    }
+}
+
+mod default {
+    #[inline]
+    pub(super) fn offline() -> bool {
+        false
     }
 }
 
@@ -101,6 +114,9 @@ pub struct Options {
 
     /// Alternative path to the cache directory
     pub cache_dir: Option<PathBuf>,
+
+    /// Controls whether issuing API requests is allowed
+    pub offline: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

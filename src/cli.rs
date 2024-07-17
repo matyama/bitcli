@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use clap::builder::ArgPredicate;
 use clap::{Args, Parser, Subcommand, ValueHint};
 use url::Url;
 
@@ -35,6 +36,20 @@ pub struct Cli {
     )]
     no_cache: bool,
 
+    /// Enabling the offline mode will prevent any API requests
+    ///
+    /// Under this mode, any command will only rely on the local cache, therefore this flag cannot
+    /// be combined with `--no-cache`. Furthermore, it's automatically disabled when `--cache-dir`
+    /// is set to an empty path (which disables caching).
+    #[arg(
+        long,
+        default_value = "false",
+        default_value_if("cache_dir", ArgPredicate::Equals("".into()), "false"),
+        conflicts_with = "no_cache",
+        env = "BITCLI_OFFLINE"
+    )]
+    offline: bool,
+
     // emulate default (sub)command
     #[clap(flatten)]
     shorten: ShortenArgs,
@@ -67,6 +82,8 @@ impl From<&Cli> for Options {
         } else {
             ops.cache_dir.clone_from(&cli.cache_dir);
         }
+
+        ops.offline = Some(cli.offline);
 
         ops
     }
