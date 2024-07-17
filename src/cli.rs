@@ -24,12 +24,16 @@ pub struct Cli {
     #[arg(long, env = "BITCLI_CACHE_DIR", value_hint = ValueHint::DirPath)]
     cache_dir: Option<PathBuf>,
 
-    // TODO: --no-cache | -nc => explicitly disable caching
-    //  - global vs ShortenArgs flag
-    //  - possibly implement by adding a `cache_dir()` getter that combines all the cache* fields
-    //  - conflicts with vs overrides `cache_dir` option
-    //#[arg(short, long, default_value = "false", env = "BITCLI_NO_CACHE")]
-    //no_cache: bool,
+    /// Explicitly disable local cache for this command invocation
+    ///
+    /// Equivalent to passing an empty `--cache-dir` path. Takes priority over `--cache-dir`.
+    #[arg(
+        long,
+        default_value = "false",
+        overrides_with = "cache_dir",
+        env = "BITCLI_NO_CACHE"
+    )]
+    no_cache: bool,
 
     // emulate default (sub)command
     #[clap(flatten)]
@@ -56,7 +60,14 @@ impl Cli {
 impl From<&Cli> for Options {
     fn from(cli: &Cli) -> Self {
         let mut ops = Self::default();
-        ops.cache_dir.clone_from(&cli.cache_dir);
+
+        if cli.no_cache {
+            // NOTE: empty path for the `cache_dir` disables the cache
+            ops.cache_dir = Some(PathBuf::new());
+        } else {
+            ops.cache_dir.clone_from(&cli.cache_dir);
+        }
+
         ops
     }
 }
