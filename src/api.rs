@@ -89,24 +89,33 @@ macro_rules! parse_response {
 
 pub struct Client {
     cfg: Config,
-    http: reqwest::Client,
+    http: Option<reqwest::Client>,
     cache: Option<BitlinkCache>,
 }
 
 // TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
 impl Client {
     pub async fn new(cfg: Config) -> Self {
-        let http = reqwest::Client::new();
+        let http = if cfg.offline {
+            None
+        } else {
+            Some(reqwest::Client::new())
+        };
+
         let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref()).await;
+
         Self { cfg, http, cache }
     }
 
     pub async fn fetch_user(&self) -> Result<User> {
+        let Some(ref http) = self.http else {
+            return Err(Error::Offline("user"));
+        };
+
         let endpoint = api_url("user");
 
         //println!("fetching user info");
-        let resp = self
-            .http
+        let resp = http
             .get(endpoint)
             .bearer_auth(self.cfg.api_token())
             .send()
@@ -134,9 +143,6 @@ impl Client {
 
         let domain = self.cfg.domain.as_deref().map(Cow::Borrowed);
 
-        // TODO: cache links in a local sqlite DB
-        //  - use e.g. `$XDG_CACHE_HOME/bitly/links`
-        //  - add `--offline` mode (possibly conflicts with `--no-cache`)
         let payload = Shorten {
             long_url,
             domain,
@@ -150,11 +156,14 @@ impl Client {
             }
         }
 
+        let Some(ref http) = self.http else {
+            return Err(Error::Offline("shorten"));
+        };
+
         let endpoint = api_url("shorten");
 
         //println!("sending shorten request: {payload:#?}");
-        let resp = self
-            .http
+        let resp = http
             .post(endpoint)
             .bearer_auth(self.cfg.api_token())
             .json(&payload)
