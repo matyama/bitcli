@@ -1,4 +1,6 @@
 use clap::Parser as _;
+use futures_util::pin_mut;
+use futures_util::stream::StreamExt as _;
 
 mod api;
 mod cache;
@@ -36,8 +38,14 @@ async fn main() {
 
     match cmd {
         Command::Shorten(args) => {
-            let bitlink = crash_if_err! { client.shorten(args.url).await };
-            println!("{}", bitlink.link);
+            let results = client.shorten(args.urls).await;
+
+            pin_mut!(results);
+
+            while let Some(result) = results.next().await {
+                let bitlink = crash_if_err! { result };
+                println!("{}", bitlink.link);
+            }
         }
     }
 }

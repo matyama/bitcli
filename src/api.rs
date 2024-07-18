@@ -1,6 +1,7 @@
 use std::borrow::Cow;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use futures_util::stream::{self, Stream, StreamExt as _};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -87,27 +88,14 @@ macro_rules! parse_response {
     };
 }
 
-pub struct Client {
+struct ClientInner {
     cfg: Config,
     http: Option<reqwest::Client>,
     cache: Option<BitlinkCache>,
 }
 
-// TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
-impl Client {
-    pub async fn new(cfg: Config) -> Self {
-        let http = if cfg.offline {
-            None
-        } else {
-            Some(reqwest::Client::new())
-        };
-
-        let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref()).await;
-
-        Self { cfg, http, cache }
-    }
-
-    pub async fn fetch_user(&self) -> Result<User> {
+impl ClientInner {
+    async fn fetch_user(&self) -> Result<User> {
         let Some(ref http) = self.http else {
             return Err(Error::Offline("user"));
         };
@@ -126,7 +114,7 @@ impl Client {
         }
     }
 
-    pub async fn shorten(&self, long_url: Url) -> Result<Bitlink> {
+    async fn shorten(&self, long_url: Url) -> Result<Bitlink> {
         //println!("shortening {long_url}");
 
         let group_guid = match &self.cfg.default_group_guid {
@@ -190,5 +178,48 @@ impl Client {
         }
 
         result
+    }
+
+    async fn shorten_all(
+        self: Arc<Self>,
+        urls: impl IntoIterator<Item = Url>,
+    ) -> impl Stream<Item = Result<Bitlink>> {
+        let max_concurrent = self.cfg.max_concurrent;
+
+        stream::iter(urls)
+            .map(move |url| {
+                let client = Arc::clone(&self);
+                async move { client.shorten(url).await }
+            })
+            .buffered(max_concurrent)
+    }
+}
+
+pub struct Client {
+    inner: Arc<ClientInner>,
+}
+
+// TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
+impl Client {
+    pub async fn new(cfg: Config) -> Self {
+        let http = if cfg.offline {
+            None
+        } else {
+            Some(reqwest::Client::new())
+        };
+
+        let cache = BitlinkCache::new(VERSION, cfg.cache_dir.as_ref()).await;
+
+        Self {
+            inner: Arc::new(ClientInner { cfg, http, cache }),
+        }
+    }
+
+    pub async fn shorten(
+        &self,
+        urls: impl IntoIterator<Item = Url>,
+    ) -> impl Stream<Item = Result<Bitlink>> {
+        let client = Arc::clone(&self.inner);
+        client.shorten_all(urls).await
     }
 }

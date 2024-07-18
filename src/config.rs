@@ -45,6 +45,10 @@ pub struct Config {
     /// Any command will only rely on the local cache under the _offline_ mode.
     #[serde(default = "default::offline")]
     pub offline: bool,
+
+    /// Maximum number of API requests in flight
+    #[serde(default = "default::max_concurrent")]
+    pub max_concurrent: usize,
 }
 
 impl Config {
@@ -89,6 +93,10 @@ impl Config {
         if let Some(offline) = ops.offline {
             self.offline = offline;
         }
+
+        if let Some(max_concurrent) = ops.max_concurrent {
+            self.max_concurrent = max_concurrent;
+        }
     }
 
     #[inline]
@@ -101,6 +109,11 @@ mod default {
     #[inline]
     pub(super) fn offline() -> bool {
         false
+    }
+
+    #[inline]
+    pub(super) fn max_concurrent() -> usize {
+        16
     }
 }
 
@@ -117,6 +130,9 @@ pub struct Options {
 
     /// Controls whether issuing API requests is allowed
     pub offline: Option<bool>,
+
+    /// Maximum number of API requests in flight
+    pub max_concurrent: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
