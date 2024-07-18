@@ -51,6 +51,9 @@ api_token = "<API TOKEN>"
 
 # Default group GUID (optional)
 default_group_guid = "<DEFAULT GROUP GUID>"
+
+# Maximum number of API requests in flight (default: 16)
+max_concurrent = 16
 ```
 
 Then you can read-protect just a portion of the config

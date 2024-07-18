@@ -108,8 +108,12 @@ impl From<&Command> for Options {
 
         match cmd {
             Command::Shorten(ShortenArgs {
-                domain, group_guid, ..
+                domain,
+                group_guid,
+                max_concurrent,
+                ..
             }) => {
+                ops.max_concurrent = Some(*max_concurrent);
                 ops.domain.clone_from(domain);
                 ops.group_guid.clone_from(group_guid);
             }
@@ -121,10 +125,16 @@ impl From<&Command> for Options {
 
 #[derive(Args, Debug)]
 pub struct ShortenArgs {
-    // TODO: allow multiple
+    // TODO: --unordered (modify the output to `<long-url> <short-url>`)
     // TODO: allow reading URL(s) from stdin
-    /// URL to shorten
-    pub url: Url,
+    /// URLs to shorten
+    #[arg(num_args(1..))]
+    pub urls: Vec<Url>,
+
+    // TODO: min = 1 | NonZeroUsize
+    /// Maximum number of API requests in flight
+    #[arg(long, default_value = "16", env = "BITCLI_MAX_CONCURRENT")]
+    pub max_concurrent: usize,
 
     /// The domain to create bitlinks under
     #[arg(short, long, env = "BITCLI_DOMAIN")]
