@@ -87,7 +87,7 @@ impl BitlinkCache {
     pub async fn get(&self, query: &Shorten<'_>) -> Option<Bitlink> {
         let res = sqlx::query_as(
             r#"
-            SELECT id, link
+            SELECT id, link, long_url
             FROM shorten
             WHERE group_guid = $1 AND domain = $2 AND long_url = $3
             LIMIT 1
@@ -140,6 +140,7 @@ impl FromRow<'_, SqliteRow> for Bitlink {
         Ok(Self {
             link: row.try_from::<&str, _, _>("link")?,
             id: row.try_get("id")?,
+            long_url: row.try_from::<&str, _, _>("long_url")?,
         })
     }
 }
@@ -194,6 +195,7 @@ mod tests {
         Bitlink {
             link: "https://bit.ly/4ePsyXN".parse().unwrap(),
             id: "some-bitlink-id".to_string(),
+            long_url: "https://example.com".parse().unwrap(),
         }
     }
 

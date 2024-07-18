@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use clap::builder::ArgPredicate;
-use clap::{Args, Parser, Subcommand, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use url::Url;
 
 use crate::config::{ConfigError, Options, APP};
@@ -30,7 +30,7 @@ pub struct Cli {
     /// Equivalent to passing an empty `--cache-dir` path. Takes priority over `--cache-dir`.
     #[arg(
         long,
-        default_value = "false",
+        default_value_t = false,
         overrides_with = "cache_dir",
         env = "BITCLI_NO_CACHE"
     )]
@@ -43,7 +43,7 @@ pub struct Cli {
     /// is set to an empty path (which disables caching).
     #[arg(
         long,
-        default_value = "false",
+        default_value_t = false,
         default_value_if("cache_dir", ArgPredicate::Equals("".into()), "false"),
         conflicts_with = "no_cache",
         env = "BITCLI_OFFLINE"
@@ -125,7 +125,6 @@ impl From<&Command> for Options {
 
 #[derive(Args, Debug)]
 pub struct ShortenArgs {
-    // TODO: --unordered (modify the output to `<long-url> <short-url>`)
     // TODO: allow reading URL(s) from stdin
     /// URLs to shorten
     #[arg(num_args(1..))]
@@ -133,8 +132,17 @@ pub struct ShortenArgs {
 
     // TODO: min = 1 | NonZeroUsize
     /// Maximum number of API requests in flight
-    #[arg(long, default_value = "16", env = "BITCLI_MAX_CONCURRENT")]
+    #[arg(long, default_value_t = 16, env = "BITCLI_MAX_CONCURRENT")]
     pub max_concurrent: usize,
+
+    /// The type of the output ordering
+    ///
+    ///  - ordered: individual outputs follow the input order
+    ///
+    ///  - unordered: outputs follow an arbitrary order, but are printed together with
+    ///    corresponding input URL
+    #[arg(long, default_value_t, value_enum, env = "BITCLI_ORDERING")]
+    pub ordering: Ordering,
 
     /// The domain to create bitlinks under
     #[arg(short, long, env = "BITCLI_DOMAIN")]
@@ -151,4 +159,11 @@ pub struct ShortenArgs {
     ///  3. If still unknown, fetch current default group GUID for the authenticated user
     #[arg(short, long, env = "BITCLI_GROUP_GUID")]
     pub group_guid: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+pub enum Ordering {
+    #[default]
+    Ordered,
+    Unordered,
 }
