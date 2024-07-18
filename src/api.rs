@@ -1,12 +1,14 @@
 use std::borrow::Cow;
+use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
-use futures_util::stream::{self, Stream, StreamExt as _};
+use futures_util::stream::{self, BoxStream, Stream, StreamExt as _};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::cache::BitlinkCache;
+use crate::cli::Ordering;
 use crate::config::Config;
 use crate::error::{Error, Result};
 
@@ -58,8 +60,8 @@ impl std::fmt::Debug for Shorten<'_> {
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Bitlink {
     pub link: Url,
-    #[allow(dead_code)]
     pub id: String,
+    pub long_url: Url,
 }
 
 impl std::fmt::Display for Bitlink {
@@ -180,18 +182,14 @@ impl ClientInner {
         result
     }
 
-    async fn shorten_all(
+    fn shorten_all(
         self: Arc<Self>,
         urls: impl IntoIterator<Item = Url>,
-    ) -> impl Stream<Item = Result<Bitlink>> {
-        let max_concurrent = self.cfg.max_concurrent;
-
-        stream::iter(urls)
-            .map(move |url| {
-                let client = Arc::clone(&self);
-                async move { client.shorten(url).await }
-            })
-            .buffered(max_concurrent)
+    ) -> impl Stream<Item = impl Future<Output = Result<Bitlink>>> {
+        stream::iter(urls).map(move |url| {
+            let client = Arc::clone(&self);
+            async move { client.shorten(url).await }
+        })
     }
 }
 
@@ -215,11 +213,21 @@ impl Client {
         }
     }
 
-    pub async fn shorten(
-        &self,
-        urls: impl IntoIterator<Item = Url>,
-    ) -> impl Stream<Item = Result<Bitlink>> {
+    pub fn shorten<'a, I>(&self, urls: I, ordering: Ordering) -> BoxStream<'a, Result<Bitlink>>
+    where
+        I: IntoIterator<Item = Url> + 'a,
+        <I as IntoIterator>::IntoIter: Send,
+    {
         let client = Arc::clone(&self.inner);
-        client.shorten_all(urls).await
+        let max_concurrent = client.cfg.max_concurrent;
+
+        match ordering {
+            Ordering::Ordered => client.shorten_all(urls).buffered(max_concurrent).boxed(),
+
+            Ordering::Unordered => client
+                .shorten_all(urls)
+                .buffer_unordered(max_concurrent)
+                .boxed(),
+        }
     }
 }

@@ -1,5 +1,4 @@
 use clap::Parser as _;
-use futures_util::pin_mut;
 use futures_util::stream::StreamExt as _;
 
 mod api;
@@ -9,7 +8,7 @@ mod config;
 mod error;
 
 use api::Client;
-use cli::{Cli, Command};
+use cli::{Cli, Command, Ordering};
 use config::Config;
 
 macro_rules! crash_if_err {
@@ -38,13 +37,22 @@ async fn main() {
 
     match cmd {
         Command::Shorten(args) => {
-            let results = client.shorten(args.urls).await;
+            let mut results = client.shorten(args.urls, args.ordering);
 
-            pin_mut!(results);
+            match args.ordering {
+                Ordering::Ordered => {
+                    while let Some(result) = results.next().await {
+                        let bitlink = crash_if_err! { result };
+                        println!("{}", bitlink.link);
+                    }
+                }
 
-            while let Some(result) = results.next().await {
-                let bitlink = crash_if_err! { result };
-                println!("{}", bitlink.link);
+                Ordering::Unordered => {
+                    while let Some(result) = results.next().await {
+                        let bitlink = crash_if_err! { result };
+                        println!("{}\t{}", bitlink.link, bitlink.long_url);
+                    }
+                }
             }
         }
     }
