@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use hide::Hide;
 use serde::Deserialize;
 
-pub(crate) const APP: &str = "bitcli";
+pub const APP: &str = "bitcli";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
