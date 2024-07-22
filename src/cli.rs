@@ -125,8 +125,9 @@ impl From<&Command> for Options {
 
 #[derive(Args, Debug)]
 pub struct ShortenArgs {
-    // TODO: allow reading URL(s) from stdin
     /// URLs to shorten
+    ///
+    /// If none given as program arguments, then the application will try to read them from stdin.
     #[arg(num_args(1..))]
     pub urls: Vec<Url>,
 

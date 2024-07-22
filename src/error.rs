@@ -13,6 +13,9 @@ pub enum Error {
     UnknownGroupGUID(&'static str),
 
     #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
     Http(#[from] reqwest::Error),
 
     #[error(transparent)]
