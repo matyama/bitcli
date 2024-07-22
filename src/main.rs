@@ -10,14 +10,14 @@ mod io;
 
 use api::Client;
 use cli::{Cli, Command, Ordering};
-use config::Config;
+use config::{Config, APP};
 
 macro_rules! crash_if_err {
     ($exp:expr) => {
         match $exp {
             Ok(result) => result,
             Err(error) => {
-                eprintln!("{error}");
+                eprintln!("{APP}: {error}");
                 std::process::exit(1);
             }
         }
