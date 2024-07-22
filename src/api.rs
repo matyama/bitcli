@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
-use futures_util::stream::{self, BoxStream, Stream, StreamExt as _};
+use futures_util::stream::{BoxStream, Stream, StreamExt as _};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -184,9 +184,9 @@ impl ClientInner {
 
     fn shorten_all(
         self: Arc<Self>,
-        urls: impl IntoIterator<Item = Url>,
+        urls: impl Stream<Item = Url>,
     ) -> impl Stream<Item = impl Future<Output = Result<Bitlink>>> {
-        stream::iter(urls).map(move |url| {
+        urls.map(move |url| {
             let client = Arc::clone(&self);
             async move { client.shorten(url).await }
         })
@@ -213,10 +213,9 @@ impl Client {
         }
     }
 
-    pub fn shorten<'a, I>(&self, urls: I, ordering: Ordering) -> BoxStream<'a, Result<Bitlink>>
+    pub fn shorten<'a, S>(&self, urls: S, ordering: Ordering) -> BoxStream<'a, Result<Bitlink>>
     where
-        I: IntoIterator<Item = Url> + 'a,
-        <I as IntoIterator>::IntoIter: Send,
+        S: Stream<Item = Url> + Send + 'a,
     {
         let client = Arc::clone(&self.inner);
         let max_concurrent = client.cfg.max_concurrent;

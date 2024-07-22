@@ -1,11 +1,12 @@
 use clap::Parser as _;
-use futures_util::stream::StreamExt as _;
+use futures_util::stream::{self, StreamExt as _};
 
 mod api;
 mod cache;
 mod cli;
 mod config;
 mod error;
+mod io;
 
 use api::Client;
 use cli::{Cli, Command, Ordering};
@@ -37,7 +38,15 @@ async fn main() {
 
     match cmd {
         Command::Shorten(args) => {
-            let mut results = client.shorten(args.urls, args.ordering);
+            let urls = if args.urls.is_empty() {
+                io::read_input::<url::Url>()
+                    .map(|url| crash_if_err!(url))
+                    .boxed()
+            } else {
+                stream::iter(args.urls).boxed()
+            };
+
+            let mut results = client.shorten(urls, args.ordering);
 
             match args.ordering {
                 Ordering::Ordered => {
