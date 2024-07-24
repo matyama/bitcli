@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::io::IsTerminal as _;
+use std::os::fd::AsFd as _;
 use std::str::FromStr;
 
 use async_stream::try_stream;
@@ -7,13 +9,22 @@ use tokio::io::{self, AsyncBufReadExt as _, BufReader};
 
 use crate::error::Result;
 
-pub fn read_input<T>() -> impl TryStream<Item = Result<T>>
+/// Read standard input as a [`TryStream`] of parsed lines of type `T`.
+///
+/// Returns `None` if the stdin handle does not refer to a terminal/tty.
+pub fn read_input<T>() -> Option<impl TryStream<Item = Result<T>>>
 where
     T: FromStr + 'static,
     <T as FromStr>::Err: Error + Send + Sync,
 {
-    try_stream! {
-        let mut stdin = BufReader::new(io::stdin());
+    let stdin = io::stdin();
+
+    if stdin.as_fd().is_terminal() {
+        return None;
+    }
+
+    Some(try_stream! {
+        let mut stdin = BufReader::new(stdin);
         let mut buf = String::new();
 
         loop {
@@ -27,7 +38,7 @@ where
 
             buf.clear();
         }
-    }
+    })
 }
 
 #[inline]

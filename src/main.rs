@@ -39,9 +39,10 @@ async fn main() {
     match cmd {
         Command::Shorten(args) => {
             let urls = if args.urls.is_empty() {
-                io::read_input::<url::Url>()
-                    .map(|url| crash_if_err!(url))
-                    .boxed()
+                let Some(urls) = io::read_input::<url::Url>() else {
+                    return;
+                };
+                urls.map(|url| crash_if_err!(url)).boxed()
             } else {
                 stream::iter(args.urls).boxed()
             };
