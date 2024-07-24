@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use hide::Hide;
@@ -95,7 +96,7 @@ impl Config {
         }
 
         if let Some(max_concurrent) = ops.max_concurrent {
-            self.max_concurrent = max_concurrent;
+            self.max_concurrent = max_concurrent.into();
         }
     }
 
@@ -132,7 +133,7 @@ pub struct Options {
     pub offline: Option<bool>,
 
     /// Maximum number of API requests in flight
-    pub max_concurrent: Option<usize>,
+    pub max_concurrent: Option<NonZeroUsize>,
 }
 
 #[derive(Debug, Deserialize)]
