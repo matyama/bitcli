@@ -20,6 +20,7 @@ lint:
     cargo outdated -q -R --exit-code=1
     cargo hack -q --feature-powerset check
     cargo deny --log-level=error check -s
+    cargo msrv --no-user-output verify
 
 @test profile="dev":
     cargo llvm-cov --profile {{ profile }} --workspace --all-features --all-targets
