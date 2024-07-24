@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use clap::builder::ArgPredicate;
@@ -113,7 +114,7 @@ impl From<&Command> for Options {
                 max_concurrent,
                 ..
             }) => {
-                ops.max_concurrent = Some(*max_concurrent);
+                ops.max_concurrent = NonZeroUsize::new(*max_concurrent as usize);
                 ops.domain.clone_from(domain);
                 ops.group_guid.clone_from(group_guid);
             }
@@ -131,10 +132,14 @@ pub struct ShortenArgs {
     #[arg(num_args(1..))]
     pub urls: Vec<Url>,
 
-    // TODO: min = 1 | NonZeroUsize
     /// Maximum number of API requests in flight
-    #[arg(long, default_value_t = 16, env = "BITCLI_MAX_CONCURRENT")]
-    pub max_concurrent: usize,
+    #[arg(
+        long,
+        default_value_t = 16,
+        value_parser = clap::value_parser!(u64).range(1..),
+        env = "BITCLI_MAX_CONCURRENT",
+    )]
+    pub max_concurrent: u64,
 
     /// The type of the output ordering
     ///
