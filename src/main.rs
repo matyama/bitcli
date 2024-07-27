@@ -1,3 +1,5 @@
+use std::pin::pin;
+
 use clap::Parser as _;
 use futures_util::stream::{self, StreamExt as _};
 
@@ -42,12 +44,12 @@ async fn main() {
                 let Some(urls) = io::read_input::<url::Url>() else {
                     return;
                 };
-                urls.map(|url| crash_if_err!(url)).boxed()
+                urls.map(|url| crash_if_err!(url)).left_stream()
             } else {
-                stream::iter(args.urls).boxed()
+                stream::iter(args.urls).right_stream()
             };
 
-            let mut results = client.shorten(urls, args.ordering);
+            let mut results = pin!(client.shorten(urls, args.ordering));
 
             match args.ordering {
                 Ordering::Ordered => {

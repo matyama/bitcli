@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
-use futures_util::stream::{BoxStream, Stream, StreamExt as _};
+use futures_util::stream::{Stream, StreamExt as _};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -213,7 +213,11 @@ impl Client {
         }
     }
 
-    pub fn shorten<'a, S>(&self, urls: S, ordering: Ordering) -> BoxStream<'a, Result<Bitlink>>
+    pub fn shorten<'a, S>(
+        &self,
+        urls: S,
+        ordering: Ordering,
+    ) -> impl Stream<Item = Result<Bitlink>> + 'a
     where
         S: Stream<Item = Url> + Send + 'a,
     {
@@ -221,12 +225,15 @@ impl Client {
         let max_concurrent = client.cfg.max_concurrent;
 
         match ordering {
-            Ordering::Ordered => client.shorten_all(urls).buffered(max_concurrent).boxed(),
+            Ordering::Ordered => client
+                .shorten_all(urls)
+                .buffered(max_concurrent)
+                .left_stream(),
 
             Ordering::Unordered => client
                 .shorten_all(urls)
                 .buffer_unordered(max_concurrent)
-                .boxed(),
+                .right_stream(),
         }
     }
 }
