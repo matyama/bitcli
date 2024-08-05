@@ -30,4 +30,4 @@ xdg = "2.5"
 
 [dev-dependencies]
 rstest = "0.21.0"
-tempfile = "3.10.1"
+tempfile = "3.11.0"
