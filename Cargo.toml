@@ -29,5 +29,5 @@ url = { version = "2.5", features = ["serde"] }
 xdg = "2.5"
 
 [dev-dependencies]
-rstest = "0.21.0"
-tempfile = "3.10.1"
+rstest = "0.22"
+tempfile = "3.11"
