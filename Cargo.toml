@@ -16,7 +16,7 @@ codegen-units = 1
 [dependencies]
 async-stream = "0.3.5"
 clap = { version = "4.5", features = ["derive", "env"] }
-config = "0.14"
+config = { version = "0.14", default-features = false, features = ["toml"] }
 futures-util = "0.3.30"
 hide = { version = "0.1", features = ["serde"] }
 home = "0.5"
