@@ -10,8 +10,9 @@ keywords = ["bitly", "cli", "url", "shortener"]
 rust-version = "1.74"
 
 [profile.release]
-debug = true
 codegen-units = 1
+strip = true
+lto = true
 
 [dependencies]
 async-stream = "0.3.5"
