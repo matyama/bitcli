@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use hide::Hide;
 use serde::Deserialize;
+use url::Url;
 
 pub const APP: &str = "bitcli";
 
@@ -22,6 +23,9 @@ pub enum ConfigError {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    #[serde(default = "default::api_url")]
+    pub api_url: Url,
+
     /// API access token
     pub api_token: Hide<String>,
 
@@ -100,6 +104,12 @@ impl Config {
         }
     }
 
+    #[cfg(test)]
+    #[inline]
+    pub(crate) fn with_api_url(&mut self, api_url: Url) {
+        self.api_url = api_url;
+    }
+
     #[inline]
     pub(crate) fn api_token(&self) -> &str {
         self.api_token.as_ref()
@@ -107,6 +117,13 @@ impl Config {
 }
 
 mod default {
+    use url::Url;
+
+    #[inline]
+    pub(super) fn api_url() -> Url {
+        Url::parse("https://api-ssl.bitly.com").expect("valid API URL")
+    }
+
     #[inline]
     pub(super) fn offline() -> bool {
         false

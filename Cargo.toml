@@ -46,3 +46,4 @@ xdg = "2.5"
 rstest = { version = "0.22.0", default-features = false }
 tempfile = "3.11.0"
 tokio-test = "0.4.4"
+wiremock = "0.6.1"

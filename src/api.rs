@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use futures_util::stream::{Stream, StreamExt as _};
 use reqwest::StatusCode;
@@ -13,18 +13,6 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 
 const VERSION: &str = "v4";
-
-fn api_url(endpoint: &str) -> Url {
-    static API_URL: OnceLock<Url> = OnceLock::new();
-    API_URL
-        .get_or_init(|| {
-            format!("https://api-ssl.bitly.com/{VERSION}/")
-                .parse()
-                .expect("invalid API URL")
-        })
-        .join(endpoint)
-        .expect("invalid endpoint URL")
-}
 
 /// API request to get user info
 ///
@@ -57,7 +45,7 @@ impl std::fmt::Debug for Shorten<'_> {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Bitlink {
     pub link: Url,
     pub id: String,
@@ -97,12 +85,20 @@ struct ClientInner {
 }
 
 impl ClientInner {
+    fn api_url(&self, endpoint: &str) -> Url {
+        self.cfg
+            .api_url
+            .join(VERSION)
+            .and_then(|url| url.join(endpoint))
+            .expect("invalid endpoint URL")
+    }
+
     async fn fetch_user(&self) -> Result<User> {
         let Some(ref http) = self.http else {
             return Err(Error::Offline("user"));
         };
 
-        let endpoint = api_url("user");
+        let endpoint = self.api_url("user");
 
         //println!("fetching user info");
         let resp = http
@@ -150,7 +146,7 @@ impl ClientInner {
             return Err(Error::Offline("shorten"));
         };
 
-        let endpoint = api_url("shorten");
+        let endpoint = self.api_url("shorten");
 
         //println!("sending shorten request: {payload:#?}");
         let resp = http
@@ -236,4 +232,243 @@ impl Client {
                 .right_stream(),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::*;
+
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicUsize;
+
+    use futures_util::stream;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+
+    struct LinkResponder {
+        resp_num: AtomicUsize,
+        responses: Vec<String>,
+    }
+
+    impl LinkResponder {
+        fn new(ordering: Ordering, responses: impl IntoIterator<Item = impl Into<String>>) -> Self {
+            let mut responses = responses.into_iter().map(Into::<String>::into).collect();
+            Self {
+                resp_num: AtomicUsize::new(0),
+                responses: match ordering {
+                    Ordering::Ordered => responses,
+                    Ordering::Unordered => {
+                        responses.reverse();
+                        responses
+                    }
+                },
+            }
+        }
+    }
+
+    impl Respond for LinkResponder {
+        fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
+            let i = self
+                .resp_num
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            let body = self.responses[i].as_bytes();
+
+            ResponseTemplate::new(StatusCode::OK).set_body_raw(body, "application/json")
+        }
+    }
+
+    struct ShortenTest {
+        urls: Vec<Url>,
+        responder: LinkResponder,
+        expected: Vec<Bitlink>,
+    }
+
+    struct ServerConfig {
+        server: MockServer,
+        config: Config,
+    }
+
+    // NOTE: starts mock server on a random local port
+    #[fixture]
+    async fn server() -> MockServer {
+        MockServer::start().await
+    }
+
+    // NOTE: disables caching
+    #[fixture]
+    fn config() -> Config {
+        Config {
+            api_url: Url::parse("https://api-ssl.bitly.com").unwrap(),
+            api_token: "secret-token".into(),
+            domain: Some("test.domain".to_string()),
+            default_group_guid: Some("test-group-guid".to_string()),
+            cache_dir: Some(PathBuf::new()),
+            offline: false,
+            max_concurrent: 4,
+        }
+    }
+
+    #[fixture]
+    async fn server_config(#[future(awt)] server: MockServer, mut config: Config) -> ServerConfig {
+        config.with_api_url(server.uri().parse().expect("valid mock API URL"));
+        ServerConfig { server, config }
+    }
+
+    #[fixture]
+    fn urls() -> Vec<Url> {
+        vec![
+            Url::parse("https://example.com").unwrap(),
+            Url::parse("http://example.com").unwrap(),
+        ]
+    }
+
+    #[fixture]
+    fn shorten_test(
+        #[default(Ordering::Ordered)] ordering: Ordering,
+        urls: Vec<Url>,
+    ) -> ShortenTest {
+        ShortenTest {
+            urls,
+            responder: LinkResponder::new(
+                ordering,
+                [
+                    r#"{
+                      "created_at": "2024-08-07T08:48:48+0000",
+                      "id": "1",
+                      "link": "https://test.domain/4ePsyXN",
+                      "custom_bitlinks": [],
+                      "long_url": "https://example.com",
+                      "archived": false,
+                      "tags": [],
+                      "deeplinks": [],
+                      "references": {
+                        "group": "https://api-ssl.bitly.com/v4/groups/test-group-guid"
+                      }
+                    }"#,
+                    r#"{
+                      "created_at": "2024-08-07T08:48:49+0000",
+                      "id": "2",
+                      "link": "https://test.domain/3WA1XXp",
+                      "custom_bitlinks": [],
+                      "long_url": "http://example.com",
+                      "archived": false,
+                      "tags": [],
+                      "deeplinks": [],
+                      "references": {
+                        "group": "https://api-ssl.bitly.com/v4/groups/test-group-guid"
+                      }
+                    }"#,
+                ],
+            ),
+            expected: vec![
+                Bitlink {
+                    link: "https://test.domain/4ePsyXN".parse().unwrap(),
+                    id: "1".to_string(),
+                    long_url: "https://example.com".parse().unwrap(),
+                },
+                Bitlink {
+                    link: "https://test.domain/3WA1XXp".parse().unwrap(),
+                    id: "2".to_string(),
+                    long_url: "http://example.com".parse().unwrap(),
+                },
+            ],
+        }
+    }
+
+    async fn test_shorten(
+        config: Config,
+        urls: Vec<Url>,
+        ordering: Ordering,
+    ) -> Vec<Result<Bitlink>> {
+        // TODO: parametrize client by cache to be able to mock it for tests
+        let client = Client::new(config).await;
+        client
+            .shorten(stream::iter(urls), ordering)
+            .collect::<Vec<_>>()
+            .await
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn shorten_urls_ordered(
+        #[future(awt)] server_config: ServerConfig,
+        #[from(shorten_test)] ShortenTest {
+            urls,
+            responder,
+            expected,
+        }: ShortenTest,
+    ) {
+        let ServerConfig { server, config } = server_config;
+
+        Mock::given(method("POST"))
+            .and(path("/shorten"))
+            .respond_with(responder)
+            .mount(&server)
+            .await;
+
+        let results = test_shorten(config, urls, Ordering::Ordered).await;
+
+        match results.into_iter().collect::<Result<Vec<_>>>() {
+            Ok(actual) => assert_eq!(expected, actual),
+            Err(error) => panic!("encountered API/client error: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn shorten_urls_unordered(
+        #[future(awt)] server_config: ServerConfig,
+        #[from(shorten_test)]
+        #[with(Ordering::Unordered)]
+        ShortenTest {
+            urls,
+            responder,
+            expected,
+        }: ShortenTest,
+    ) {
+        let ServerConfig { server, config } = server_config;
+
+        Mock::given(method("POST"))
+            .and(path("/shorten"))
+            .respond_with(responder)
+            .mount(&server)
+            .await;
+
+        let results = test_shorten(config, urls, Ordering::Unordered).await;
+
+        match results.into_iter().collect::<Result<Vec<_>>>() {
+            Ok(mut actual) => {
+                actual.sort_by_cached_key(|link| link.id.parse::<u8>().expect("use u8 IDs"));
+                assert_eq!(expected, actual)
+            }
+            Err(error) => panic!("encountered API/client error: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn shorten_auth_error(#[future(awt)] server_config: ServerConfig, urls: Vec<Url>) {
+        let ServerConfig { server, config } = server_config;
+
+        let forbidden = ResponseTemplate::new(StatusCode::FORBIDDEN)
+            .set_body_raw(r#"{"message": "FORBIDDEN"}"#, "application/json");
+
+        Mock::given(method("POST"))
+            .and(path("/shorten"))
+            .respond_with(forbidden)
+            .mount(&server)
+            .await;
+
+        let results = test_shorten(config, urls, Ordering::Ordered).await;
+
+        match results.into_iter().collect::<Result<Vec<_>>>() {
+            Ok(links) => panic!("expected API error (FORBIDDEN), got: {links:?}"),
+            Err(Error::Bitly(resp)) => assert_eq!("FORBIDDEN", resp.message),
+            Err(error) => panic!("expected API error (FORBIDDEN), got: {error:?}"),
+        }
+    }
+
+    // TODO: test with caching enabled and --offline
 }
