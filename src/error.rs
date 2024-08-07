@@ -28,17 +28,17 @@ pub enum Error {
     errors.as_deref().unwrap_or_default(),
 )]
 pub struct ErrorResponse {
-    message: String,
-    description: Option<String>,
-    resource: Option<String>,
+    pub(crate) message: String,
+    pub(crate) description: Option<String>,
+    pub(crate) resource: Option<String>,
     #[serde(skip_deserializing)]
-    errors: Option<Vec<FieldError>>,
+    pub(crate) errors: Option<Vec<FieldError>>,
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct FieldError {
-    field: String,
-    error_code: String,
-    message: String,
+    pub(crate) field: String,
+    pub(crate) error_code: String,
+    pub(crate) message: String,
 }
