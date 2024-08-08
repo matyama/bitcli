@@ -21,7 +21,7 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Config {
     #[serde(default = "default::api_url")]
     pub api_url: Url,
@@ -194,4 +194,175 @@ fn get_config_dir(cfg_path: &Path) -> io::Result<Cow<'_, Path>> {
                 Ok(Cow::from(path))
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::*;
+
+    use std::io::Write as _;
+
+    use tempfile::{Builder, NamedTempFile, TempDir};
+
+    #[fixture]
+    #[once]
+    fn config_dir() -> TempDir {
+        TempDir::new().expect("test temp dir")
+    }
+
+    #[fixture]
+    fn config_file(config_dir: &TempDir) -> NamedTempFile {
+        Builder::new()
+            .suffix(".toml")
+            .tempfile_in(config_dir)
+            .expect("temp config file")
+    }
+
+    #[fixture]
+    fn import_file(config_dir: &TempDir) -> NamedTempFile {
+        Builder::new()
+            .suffix(".toml")
+            .tempfile_in(config_dir)
+            .expect("temp import file")
+    }
+
+    #[fixture]
+    fn config() -> Config {
+        Config {
+            api_url: default::api_url(),
+            api_token: "test-api-token".into(),
+            domain: None,
+            default_group_guid: None,
+            cache_dir: None,
+            offline: default::offline(),
+            max_concurrent: default::max_concurrent(),
+        }
+    }
+
+    #[rstest]
+    fn load_config(mut config_file: NamedTempFile, mut import_file: NamedTempFile) {
+        write!(
+            import_file,
+            r#"
+            # API token
+            api_token = "test-api-token"
+
+            # Default group GUID
+            default_group_guid = "test-group-guid"
+            "#,
+        )
+        .expect("write temp auth file");
+
+        write!(
+            config_file,
+            r#"
+            import = [{:?}]
+
+            # Cache directory (optional, empty path disables caching)
+            cache_dir = ""
+
+            # Maximum number of API requests in flight (default: 16)
+            max_concurrent = 8
+            "#,
+            import_file.path()
+        )
+        .expect("write temp config file");
+
+        let expected = Config {
+            api_url: default::api_url(),
+            api_token: "test-api-token".into(),
+            domain: None,
+            default_group_guid: Some("test-group-guid".to_string()),
+            cache_dir: Some(PathBuf::new()),
+            offline: false,
+            max_concurrent: 8,
+        };
+
+        match Config::load(config_file) {
+            Ok(actual) => assert_eq!(expected, actual),
+            Err(error) => panic!("expected to read valid test config, got: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    fn config_file_does_not_exist() {
+        let Err(error) = Config::load(PathBuf::from("/tmp/non-existant.toml")) else {
+            panic!("loaded config from non-existent file");
+        };
+
+        match error {
+            ConfigError::Load(_) => {}
+            error => panic!("expected to get a Load error, got: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    fn ignore_missing_imports(mut config_file: NamedTempFile, #[from(config)] expected: Config) {
+        write!(
+            config_file,
+            r#"
+            import = ["non-existent"]
+            api_token = "test-api-token"
+            "#,
+        )
+        .expect("write temp config file");
+
+        match Config::load(config_file) {
+            Ok(actual) => assert_eq!(expected, actual),
+            Err(error) => panic!("expected to read valid test config, got: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    fn load_fails_when_missing_required_fields(mut config_file: NamedTempFile) {
+        // NOTE: missing `api_token` & it can't be found in the non-existent import
+        write!(
+            config_file,
+            r#"
+            import = ["non-existent"]
+            "#,
+        )
+        .expect("write temp config file");
+
+        let Err(error) = Config::load(config_file) else {
+            panic!("loaded config that is missing a required field: 'api_token'");
+        };
+
+        match error {
+            ConfigError::Load(_) => {}
+            error => panic!("expected to get a Load error, got: {error:?}"),
+        }
+    }
+
+    #[rstest]
+    fn override_options(mut config: Config) {
+        config.override_with(Options {
+            domain: Some("my-domain".to_string()),
+            group_guid: None,
+            cache_dir: None,
+            offline: None,
+            max_concurrent: None,
+        });
+
+        config.override_with(Options {
+            domain: None,
+            group_guid: None,
+            cache_dir: None,
+            offline: Some(true),
+            max_concurrent: None,
+        });
+
+        let expected = Config {
+            api_url: default::api_url(),
+            api_token: "test-api-token".into(),
+            domain: Some("my-domain".to_string()),
+            default_group_guid: None,
+            cache_dir: None,
+            offline: true,
+            max_concurrent: default::max_concurrent(),
+        };
+
+        assert_eq!(expected, config);
+    }
 }
