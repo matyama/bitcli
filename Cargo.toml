@@ -5,7 +5,7 @@ authors = ["Martin Matyášek <martin.matyasek@gmail.com>"]
 edition = "2021"
 description = "Simple CLI tool for URL shortening via Bitly"
 repository = "https://github.com/matyama/bitcli"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 keywords = ["bitly", "cli", "url", "shortener"]
 rust-version = "1.74"
 
