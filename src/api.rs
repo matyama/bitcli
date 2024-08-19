@@ -78,6 +78,12 @@ macro_rules! parse_response {
     };
 }
 
+fn api_url(base: &Url, endpoint: &str) -> Url {
+    let mut api_url = base.clone();
+    api_url.set_path(&format!("{VERSION}/{endpoint}"));
+    api_url
+}
+
 struct ClientInner {
     cfg: Config,
     http: Option<reqwest::Client>,
@@ -85,12 +91,9 @@ struct ClientInner {
 }
 
 impl ClientInner {
+    #[inline]
     fn api_url(&self, endpoint: &str) -> Url {
-        self.cfg
-            .api_url
-            .join(VERSION)
-            .and_then(|url| url.join(endpoint))
-            .expect("invalid endpoint URL")
+        api_url(&self.cfg.api_url, endpoint)
     }
 
     async fn fetch_user(&self) -> Result<User> {
@@ -107,8 +110,14 @@ impl ClientInner {
             .send()
             .await?;
 
-        parse_response! {
-            resp => OK || FORBIDDEN | NOT_FOUND | INTERNAL_SERVER_ERROR | SERVICE_UNAVAILABLE
+        parse_response! { resp =>
+            OK
+            ||
+            FORBIDDEN
+            | GONE
+            | NOT_FOUND
+            | INTERNAL_SERVER_ERROR
+            | SERVICE_UNAVAILABLE
         }
     }
 
@@ -161,6 +170,7 @@ impl ClientInner {
             ||
             BAD_REQUEST
             | FORBIDDEN
+            | GONE
             | EXPECTATION_FAILED
             | UNPROCESSABLE_ENTITY
             | TOO_MANY_REQUESTS
@@ -403,7 +413,7 @@ mod tests {
         let ServerConfig { server, config } = server_config;
 
         Mock::given(method("POST"))
-            .and(path("/shorten"))
+            .and(path("v4/shorten"))
             .respond_with(responder)
             .mount(&server)
             .await;
@@ -431,7 +441,7 @@ mod tests {
         let ServerConfig { server, config } = server_config;
 
         Mock::given(method("POST"))
-            .and(path("/shorten"))
+            .and(path("v4/shorten"))
             .respond_with(responder)
             .mount(&server)
             .await;
@@ -456,7 +466,7 @@ mod tests {
             .set_body_raw(r#"{"message": "FORBIDDEN"}"#, "application/json");
 
         Mock::given(method("POST"))
-            .and(path("/shorten"))
+            .and(path("v4/shorten"))
             .respond_with(forbidden)
             .mount(&server)
             .await;
@@ -471,4 +481,17 @@ mod tests {
     }
 
     // TODO: test with caching enabled and --offline
+
+    #[rstest]
+    #[case::shorten(
+        "https://api-ssl.bitly.com",
+        "shorten",
+        "https://api-ssl.bitly.com/v4/shorten"
+    )]
+    fn make_api_url(#[case] base: &str, #[case] endpoint: &str, #[case] expected: &str) {
+        let base = Url::parse(base).unwrap();
+        let expected = Url::parse(expected).unwrap();
+        let actual = api_url(&base, endpoint);
+        assert_eq!(expected, actual);
+    }
 }
