@@ -2,6 +2,8 @@ use std::pin::pin;
 
 use clap::Parser as _;
 use futures_util::stream::{self, StreamExt as _};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 mod api;
 mod cache;
@@ -26,8 +28,25 @@ macro_rules! crash_if_err {
     };
 }
 
+fn setup_tracing() {
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_file(true)
+        .with_line_number(true)
+        .compact();
+
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    tracing_subscriber::registry()
+        .with(stderr_layer)
+        .with(env_filter)
+        .init();
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    setup_tracing();
+
     let cli = Cli::parse();
 
     let mut cfg = crash_if_err! { cli.config_file().and_then(Config::load) };

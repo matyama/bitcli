@@ -5,6 +5,7 @@ use std::sync::Arc;
 use futures_util::stream::{Stream, StreamExt as _};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, instrument};
 use url::Url;
 
 use crate::cache::BitlinkCache;
@@ -96,6 +97,7 @@ impl ClientInner {
         api_url(&self.cfg.api_url, endpoint)
     }
 
+    #[instrument(level = "debug", skip(self))]
     async fn fetch_user(&self) -> Result<User> {
         let Some(ref http) = self.http else {
             return Err(Error::Offline("user"));
@@ -103,7 +105,7 @@ impl ClientInner {
 
         let endpoint = self.api_url("user");
 
-        //println!("fetching user info");
+        debug!("fetching user info");
         let resp = http
             .get(endpoint)
             .bearer_auth(self.cfg.api_token())
@@ -121,8 +123,9 @@ impl ClientInner {
         }
     }
 
+    #[instrument(level = "debug", fields(%long_url), skip_all)]
     async fn shorten(&self, long_url: Url) -> Result<Bitlink> {
-        //println!("shortening {long_url}");
+        debug!("shortening URL");
 
         let group_guid = match &self.cfg.default_group_guid {
             Some(group_guid) => Cow::from(group_guid),
@@ -157,7 +160,8 @@ impl ClientInner {
 
         let endpoint = self.api_url("shorten");
 
-        //println!("sending shorten request: {payload:#?}");
+        debug!(?payload, "sending shorten request");
+
         let resp = http
             .post(endpoint)
             .bearer_auth(self.cfg.api_token())
@@ -188,6 +192,7 @@ impl ClientInner {
         result
     }
 
+    #[instrument(level = "debug", skip_all)]
     fn shorten_all(
         self: Arc<Self>,
         urls: impl Stream<Item = Url>,
@@ -205,10 +210,13 @@ pub struct Client {
 
 // TODO: handle timeouts, cancellation, API limits (see `GET /v4/user/platform_limits`), etc.
 impl Client {
+    #[instrument(name = "init_client", level = "debug")]
     pub async fn new(cfg: Config) -> Self {
         let http = if cfg.offline {
+            debug!("offline mode enabled, skipping HTTP client initialization");
             None
         } else {
+            debug!("initializing HTTP client");
             Some(reqwest::Client::new())
         };
 
@@ -219,6 +227,7 @@ impl Client {
         }
     }
 
+    #[instrument(level = "debug", skip(self, urls))]
     pub fn shorten<'a, S>(
         &self,
         urls: S,
