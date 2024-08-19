@@ -39,6 +39,12 @@ tokio = { version = "1.38", default-features = false, features = [
     "parking_lot",
     "rt",
 ] }
+tracing = "0.1.40"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+    "parking_lot",
+] }
 url = { version = "2.5", features = ["serde"] }
 xdg = "2.5"
 

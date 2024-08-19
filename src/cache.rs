@@ -3,6 +3,7 @@ use std::str::FromStr as _;
 
 use sqlx::prelude::*;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqliteRow};
+use tracing::{debug, error, instrument};
 
 use crate::api::{Bitlink, Shorten};
 use crate::config::APP;
@@ -13,6 +14,7 @@ pub struct BitlinkCache {
 }
 
 impl BitlinkCache {
+    #[instrument(name = "init_cache", level = "debug", skip(cache_dir))]
     pub async fn new(name: &str, cache_dir: Option<impl AsRef<Path>>) -> Option<Self> {
         let cache_dir = match cache_dir {
             Some(dir) if dir.as_ref().as_os_str().is_empty() => return None,
@@ -26,37 +28,37 @@ impl BitlinkCache {
 
         if !cache_dir.is_dir() {
             if let Err(error) = std::fs::create_dir_all(cache_dir.as_path()) {
-                // TODO: add a log macro
-                eprintln!("{APP}(cache): {error}");
+                error!(%error, "failed to create cache directory");
                 return None;
             };
         }
 
         if !cache_dir.is_dir() {
-            eprintln!("{APP}(cache): 'cache_dir' must be a directory");
+            error!(?cache_dir, "'cache_dir' must be a directory");
             return None;
         }
 
         let path = cache_dir.join(format!("{name}.db"));
         let path = path.to_string_lossy();
 
-        // TODO: add a log macro
-        //println!("using cache {path:?}");
-
         let Ok(ops) = SqliteConnectOptions::from_str(&format!("sqlite:{path}")) else {
-            eprintln!("{APP}(cache): invalid database path {path:?}");
+            error!(?path, "invalid database path");
             return None;
         };
 
         let ops = ops.create_if_missing(true);
 
+        debug!(%path, "connecting to SQLite database");
+
         let pool = match SqlitePool::connect_with(ops).await {
             Ok(pool) => pool,
-            Err(err) => {
-                eprintln!("{APP}(cache): {err}");
+            Err(error) => {
+                error!(%error, "database connection failed");
                 return None;
             }
         };
+
+        debug!("setting up database tables");
 
         let res = sqlx::query(
             r#"
@@ -75,16 +77,18 @@ impl BitlinkCache {
         .execute(&pool)
         .await;
 
-        if let Err(err) = res {
-            // TODO: add a log macro
-            eprintln!("{APP}(cache-create): {err}");
+        if let Err(error) = res {
+            error!(%error, "failed to set up database");
             return None;
         }
 
         Some(Self { pool })
     }
 
+    #[instrument(level = "debug", skip(self))]
     pub async fn get(&self, query: &Shorten<'_>) -> Option<Bitlink> {
+        debug!("checking local cache");
+
         let res = sqlx::query_as(
             r#"
             SELECT id, link, long_url
@@ -101,15 +105,17 @@ impl BitlinkCache {
 
         match res {
             Ok(link) => link,
-            Err(err) => {
-                // TODO: add a log macro
-                eprintln!("{APP}(cache-get): {err}");
+            Err(error) => {
+                error!(%error, "failed to access local cache");
                 None
             }
         }
     }
 
+    #[instrument(level = "debug", skip(self), ret)]
     pub async fn set(&self, query: &Shorten<'_>, link: &Bitlink) -> bool {
+        debug!("updating local cache");
+
         let res = sqlx::query(
             r#"
             INSERT INTO shorten (id, link, long_url, domain, group_guid) VALUES
@@ -127,8 +133,7 @@ impl BitlinkCache {
         match res {
             Ok(res) => res.rows_affected() == 1,
             Err(error) => {
-                // TODO: add a log macro
-                eprintln!("{APP}(cache-set): {error}");
+                error!(%error, "failed to update local cache");
                 false
             }
         }
