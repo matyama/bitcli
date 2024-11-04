@@ -7,7 +7,7 @@ description = "Simple CLI tool for URL shortening via Bitly"
 repository = "https://github.com/matyama/bitcli"
 license = "MIT OR Apache-2.0"
 keywords = ["bitly", "cli", "url", "shortener"]
-rust-version = "1.74"
+rust-version = "1.75"
 
 [profile.release]
 codegen-units = 1
