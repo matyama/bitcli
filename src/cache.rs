@@ -18,9 +18,7 @@ impl BitlinkCache {
     pub async fn new(name: &str, cache_dir: Option<impl AsRef<Path>>) -> Option<Self> {
         let cache_dir = match cache_dir {
             Some(dir) if dir.as_ref().as_os_str().is_empty() => return None,
-            // XXX: allow relative paths (requires MSRV bump)
-            // `std::path::absolute(cache_dir)` (note: `canonicalize` accesses FS => must exist)
-            Some(cache_dir) => cache_dir.as_ref().to_path_buf(),
+            Some(cache_dir) => std::path::absolute(cache_dir).ok()?,
             None => xdg::BaseDirectories::with_prefix(APP)
                 .map(|dirs| dirs.get_cache_home())
                 .ok()?,
@@ -262,5 +260,26 @@ mod tests {
     async fn disable_cache() {
         let cache = BitlinkCache::new("test-disable-cache", Some(PathBuf::new())).await;
         assert!(cache.is_none(), "empty cache dir should disable the cache");
+    }
+
+    #[cfg(target_family = "unix")]
+    #[rstest]
+    #[tokio::test]
+    async fn relative_cache_dir(cache_dir: TempDir) {
+        let dir_name = cache_dir
+            .path()
+            .file_name()
+            .map(Path::new)
+            .expect("temp dir name");
+
+        let mut relative_cache_dir = PathBuf::from("~/../../tmp");
+        relative_cache_dir.push(dir_name);
+
+        let cache = BitlinkCache::new("test-relative-cache-dir", Some(relative_cache_dir)).await;
+
+        assert!(
+            cache.is_some(),
+            "relative cache dir path should be resolved"
+        );
     }
 }
