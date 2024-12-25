@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        msrv: "1.75.0"
+        msrv: "1.81.0"
     name: ubuntu / ${{ matrix.msrv }}
     steps:
       - uses: actions/checkout@v4
