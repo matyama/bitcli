@@ -15,10 +15,10 @@ strip = true
 lto = true
 
 [dependencies]
-async-stream = "0.3.5"
+async-stream = "0.3.6"
 clap = { version = "4.5", features = ["derive", "env"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
-futures-util = { version = "0.3.30", default-features = false }
+futures-util = { version = "0.3.31", default-features = false }
 hide = { version = "0.1", default-features = false, features = ["serde"] }
 home = "0.5"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -33,14 +33,14 @@ sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
 ] }
 thiserror = "2.0"
-tokio = { version = "1.40", default-features = false, features = [
+tokio = { version = "1.44", default-features = false, features = [
     "io-std",
     "macros",
     "net",
     "parking_lot",
     "rt",
 ] }
-tracing = "0.1.40"
+tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = [
     "env-filter",
@@ -51,6 +51,6 @@ xdg = "2.5"
 
 [dev-dependencies]
 rstest = { version = "0.25.0", default-features = false }
-tempfile = "3.12.0"
+tempfile = "3.19.1"
 tokio-test = "0.4.4"
-wiremock = "0.6.1"
+wiremock = "0.6.3"
