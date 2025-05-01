@@ -1,7 +1,7 @@
 ---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.3.0
+    rev: v5.0.0
     hooks:
       - id: check-added-large-files
       - id: check-executables-have-shebangs
@@ -14,7 +14,7 @@ repos:
       - id: trailing-whitespace
 
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.35.1
+    rev: v1.37.0
     hooks:
       - id: yamllint
         args: ["--strict"]
@@ -29,9 +29,10 @@ repos:
         pass_filenames: false
         args: [--fmt, --unstable]
 
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
+  - repo: https://github.com/FeryET/pre-commit-rust
+    rev: v1.1.1
     hooks:
       - id: fmt
+        files: ".rs$"
       - id: clippy
         args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
