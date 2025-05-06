@@ -19,9 +19,7 @@ impl BitlinkCache {
         let cache_dir = match cache_dir {
             Some(dir) if dir.as_ref().as_os_str().is_empty() => return None,
             Some(cache_dir) => std::path::absolute(cache_dir).ok()?,
-            None => xdg::BaseDirectories::with_prefix(APP)
-                .map(|dirs| dirs.get_cache_home())
-                .ok()?,
+            None => xdg::BaseDirectories::with_prefix(APP).get_cache_home()?,
         };
 
         if !cache_dir.is_dir() {
@@ -275,6 +273,7 @@ mod tests {
         let mut relative_cache_dir = PathBuf::from("~/../../tmp");
         relative_cache_dir.push(dir_name);
 
+        // FIXME: test is not well isolated, it creates ~/../../tmp/<tempdir>/...
         let cache = BitlinkCache::new("test-relative-cache-dir", Some(relative_cache_dir)).await;
 
         assert!(
