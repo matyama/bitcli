@@ -64,7 +64,7 @@ impl Cli {
     pub fn config_file(&self) -> Result<Cow<'_, Path>, ConfigError> {
         match &self.config_file {
             Some(config) => Ok(Cow::from(config)),
-            None => xdg::BaseDirectories::with_prefix(APP)?
+            None => xdg::BaseDirectories::with_prefix(APP)
                 .find_config_file("config.toml")
                 .map(Cow::Owned)
                 .ok_or_else(|| std::io::Error::other("missing config.toml"))
