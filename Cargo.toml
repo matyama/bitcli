@@ -33,7 +33,7 @@ sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
 ] }
 thiserror = "2.0"
-tokio = { version = "1.46", default-features = false, features = [
+tokio = { version = "1.47", default-features = false, features = [
     "io-std",
     "macros",
     "net",
