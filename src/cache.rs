@@ -22,11 +22,11 @@ impl BitlinkCache {
             None => xdg::BaseDirectories::with_prefix(APP).get_cache_home()?,
         };
 
-        if !cache_dir.is_dir() {
-            if let Err(error) = std::fs::create_dir_all(cache_dir.as_path()) {
-                error!(%error, "failed to create cache directory");
-                return None;
-            };
+        if !cache_dir.is_dir()
+            && let Err(error) = std::fs::create_dir_all(cache_dir.as_path())
+        {
+            error!(%error, "failed to create cache directory");
+            return None;
         }
 
         if !cache_dir.is_dir() {

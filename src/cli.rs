@@ -6,7 +6,7 @@ use clap::builder::ArgPredicate;
 use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use url::Url;
 
-use crate::config::{ConfigError, Options, APP};
+use crate::config::{APP, ConfigError, Options};
 
 #[derive(Debug, Parser)]
 #[command(name = APP)]
