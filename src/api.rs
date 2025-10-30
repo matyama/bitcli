@@ -148,10 +148,10 @@ impl ClientInner {
         };
 
         // fast path: check local cache for the bitlink
-        if let Some(ref cache) = self.cache {
-            if let Some(bitlink) = cache.get(&payload).await {
-                return Ok(bitlink);
-            }
+        if let Some(ref cache) = self.cache
+            && let Some(bitlink) = cache.get(&payload).await
+        {
+            return Ok(bitlink);
         }
 
         let Some(ref http) = self.http else {
@@ -183,10 +183,10 @@ impl ClientInner {
         };
 
         // if successful then update local cache
-        if let Ok(ref result) = result {
-            if let Some(ref cache) = self.cache {
-                cache.set(&payload, result).await;
-            }
+        if let Ok(ref result) = result
+            && let Some(ref cache) = self.cache
+        {
+            cache.set(&payload, result).await;
         }
 
         result

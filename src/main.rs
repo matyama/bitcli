@@ -14,7 +14,7 @@ mod io;
 
 use api::Client;
 use cli::{Cli, Command, Ordering};
-use config::{Config, APP};
+use config::{APP, Config};
 
 macro_rules! crash_if_err {
     ($exp:expr) => {
