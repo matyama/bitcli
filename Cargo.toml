@@ -40,7 +40,7 @@ tokio = { version = "1.48", default-features = false, features = [
     "parking_lot",
     "rt",
 ] }
-tracing = "0.1.43"
+tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.20", features = [
     "env-filter",
