@@ -33,7 +33,9 @@ exceptions = [
         "ISC",
     ] },
     { crate = "aws-lc-sys", allow = [
+        "BSD-3-Clause",
         "ISC",
+        "MIT-0",
         "OpenSSL",
     ] },
     { crate = "untrusted", allow = [
